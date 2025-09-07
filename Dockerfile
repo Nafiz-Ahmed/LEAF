@@ -1,42 +1,59 @@
-# Use official Python 3.12 slim image
-FROM python:3.12-slim
-
-# Install system dependencies for Python packages
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    python3-venv \
-    python3-distutils \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
-
-# Upgrade pip, setuptools, and wheel to ensure prebuilt wheels are used
-RUN python -m ensurepip \
-    && pip install --upgrade pip setuptools wheel
+# Use Python 3.11 with Debian Bookworm (avoids python3-distutils issue)
+FROM python:3.11-slim-bookworm
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first to leverage Docker caching
+# Install system dependencies for ML/image processing (REMOVED python3-distutils)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3-venv \
+    python3-pip \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libfontconfig1 \
+    libice6 \
+    libxrandr2 \
+    libxss1 \
+    libxtst6 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libgomp1 \
+    wget \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN python -m venv /opt/venv \
-    && . /opt/venv/bin/activate \
-    && pip install --upgrade pip setuptools wheel \
-    && pip install -r requirements.txt
+# Upgrade pip and install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your app
+# Copy the application code
 COPY . .
 
-# Set environment variables so venv is used
-ENV PATH="/opt/venv/bin:$PATH"
+# Create necessary directories that your app expects
+RUN mkdir -p uploads logs
 
-# Expose Railway port
-EXPOSE 8080
+# Set environment variables for your Flask ML app
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV OMP_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
 
-# Start Flask app using gunicorn
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "2", "--timeout", "60"]
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+# Expose port (Railway will provide PORT env var)
+EXPOSE 5000
+
+# Your app.py already handles Railway's PORT correctly
+CMD ["python", "app.py"]
