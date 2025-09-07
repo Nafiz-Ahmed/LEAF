@@ -1,37 +1,42 @@
 # Use official Python 3.12 slim image
 FROM python:3.12-slim
 
-# Install system dependencies needed to build Python packages
+# Install system dependencies for Python packages
 RUN apt-get update && apt-get install -y \
     build-essential \
-    python3.12-venv \
-    python3.12-distutils \
+    python3-venv \
+    python3-distutils \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip, setuptools, and wheel to ensure prebuilt wheels are used
+RUN python -m ensurepip \
+    && pip install --upgrade pip setuptools wheel
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements
+# Copy requirements first to leverage Docker caching
 COPY requirements.txt .
 
-# Create virtual environment and install Python packages
+# Install Python dependencies
 RUN python -m venv /opt/venv \
     && . /opt/venv/bin/activate \
     && pip install --upgrade pip setuptools wheel \
     && pip install -r requirements.txt
 
-# Copy the rest of the app
+# Copy the rest of your app
 COPY . .
 
-# Set environment variables
+# Set environment variables so venv is used
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Expose port for Railway
+# Expose Railway port
 EXPOSE 8080
 
-# Start the app with gunicorn
+# Start Flask app using gunicorn
 CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "2", "--timeout", "60"]
